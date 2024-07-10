@@ -1,4 +1,6 @@
-import type { NextApiRequest, NextApiResponse } from "next"
+import { NextResponse } from "next/server"
+import { type NextRequest } from "next/server"
+import { redirect } from "next/navigation"
 import { z } from "zod"
 
 import createCalendarAppointment from "@/lib/availability/createAppointment"
@@ -18,27 +20,24 @@ const AppointmentPropsSchema = z.object({
     }),
 })
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
+export async function GET(req: NextRequest) {
   if (req.method !== "GET") {
-    res.status(405).json({ error: "Method not allowed" })
-    return
+    return NextResponse.json({ error: "Method not allowed" }, { status: 405 })
   }
 
-  const { data, key } = req.query
+  const searchParams = req.nextUrl.searchParams
 
+  const data = searchParams.get("data")
+  const key = searchParams.get("key")
+  
   if (!data) {
-    res.status(400).json({ error: "Data is missing" })
-    return
+    return NextResponse.json({ error: "Data is missing" }, { status: 400 })
   }
   // Make sure the hash matches before doing anything
   const hash = getHash(decodeURIComponent(data as string))
 
   if (hash !== key) {
-    res.status(403).json({ error: "Invalid key" })
-    return
+    return NextResponse.json({ error: "Invalid key" }, { status: 403 })
   }
 
   const object = JSON.parse(decodeURIComponent(data as string))
@@ -47,8 +46,10 @@ export default async function handler(
   const validationResult = AppointmentPropsSchema.safeParse(object)
 
   if (!validationResult.success) {
-    res.status(400).json({ error: "Malformed request" })
-    return
+    return NextResponse.json(
+      { error: "Malformed request in data validation" },
+      { status: 400 }
+    )
   }
 
   const validObject = validationResult.data
@@ -58,15 +59,21 @@ export default async function handler(
     Number.isNaN(Date.parse(validObject.start)) ||
     Number.isNaN(Date.parse(validObject.end))
   ) {
-    res.status(400).json({ error: "Malformed request" })
-    return
+    return NextResponse.json(
+      { error: "Malformed request in date parsing" },
+      { status: 400 }
+    )
   }
 
   // Create the confirmed appointment
   const response = await createCalendarAppointment({
     ...validObject,
     requestId: hash,
-    summary: `${validObject.duration} minute meeting with ${process.env.NEXT_PUBLIC_OWNER_NAME ?? "me"}`,
+    summary:
+      templates.eventSummary({
+        duration: validObject.duration,
+        clientName: validObject.name,
+      }) || "Error in createEventSummary()",
   })
 
   const details = await response.json()
@@ -77,11 +84,13 @@ export default async function handler(
 
   // If we have a link to the event, take us there.
   if (match && match[1]) {
-    res.redirect(`/booked?url=${encodeURIComponent(match[1])}`)
-
+    redirect(`/booked?url=${encodeURIComponent(match[1])}`)
     return
   }
 
   // Otherwise, something's wrong.
-  res.status(500).json({ error: "Error trying to create an appointment" })
+  return NextResponse.json(
+    { error: "Error trying to create an appointment" },
+    { status: 500 }
+  )
 }

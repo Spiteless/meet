@@ -1,36 +1,25 @@
-import type {
-  GetServerSidePropsContext,
-  InferGetServerSidePropsType,
-} from "next"
+"use client"
+
+import type { InferGetServerSidePropsType } from "next"
 import { useEffect } from "react"
-import { z } from "zod"
 
 import Template from "@/components/Template"
 import AvailabilityPicker from "@/components/availability/AvailabilityPicker"
-import {
-  ALLOWED_DURATIONS,
-  DEFAULT_DURATION,
-  OWNER_AVAILABILITY,
-} from "@/config"
+import { OWNER_AVAILABILITY } from "@/config"
 import { useProvider, withProvider } from "@/context/AvailabilityContext"
 import getAvailability from "@/lib/availability/getAvailability"
-import getBusyTimes from "@/lib/availability/getBusyTimes"
 import getPotentialTimes from "@/lib/availability/getPotentialTimes"
-import {
-  getDateRangeInterval,
-  mapDatesToStrings,
-  mapStringsToDates,
-} from "@/lib/availability/helpers"
+import { mapStringsToDates } from "@/lib/availability/helpers"
 import Day from "@/lib/day"
 import localeDayString from "@/lib/locale"
 
-export type PageProps = InferGetServerSidePropsType<typeof getServerSideProps>
+import PageProps from "./page"
 
 function Page({
   start,
   end,
   busy,
-}: InferGetServerSidePropsType<typeof getServerSideProps>) {
+}: InferGetServerSidePropsType<typeof PageProps>) {
   const {
     state: { duration, selectedDate },
     dispatch,
@@ -62,7 +51,7 @@ function Page({
   // with some availability.
   useEffect(() => {
     if (!selectedDate && slots.length > 0) {
-      const date: Date = slots[0].start;
+      const date: Date = slots[0].start
       const dateString: string = localeDayString(date)
 
       dispatch({
@@ -80,46 +69,6 @@ function Page({
       <AvailabilityPicker slots={slots} />
     </main>
   )
-}
-
-export async function getServerSideProps({ query }: GetServerSidePropsContext) {
-  const schema = z.object({
-    duration: z
-      .enum([...(ALLOWED_DURATIONS.map(String) as [string, ...string[]])])
-      .optional()
-      .default(String(DEFAULT_DURATION))
-      .transform(Number),
-    timeZone: z.string().optional(),
-    selectedDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/u)
-      .optional(),
-  })
-
-  const { duration, timeZone, selectedDate } = schema.parse(query)
-
-  // Offer two weeks of availability.
-  const start = Day.todayWithOffset(0)
-  const end = Day.todayWithOffset(14)
-
-  const busy = await getBusyTimes(
-    getDateRangeInterval({
-      start,
-      end,
-      timeZone,
-    })
-  )
-
-  return {
-    props: {
-      start: start.toString(),
-      end: end.toString(),
-      busy: mapDatesToStrings(busy),
-      duration,
-      ...(timeZone && { timeZone }),
-      ...(selectedDate && { selectedDate }),
-    },
-  }
 }
 
 export default withProvider(Page)
